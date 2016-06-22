@@ -1,17 +1,18 @@
-// Add description here
+// Example code for dc-motor-controller. Adapt this to exact use.
+//
+// NOTE: Pin descriptions and so on are for 2016-05-30 revision of the printed
+// circuit, with manual fixes. Thus, not compatible with the latest revision.
 //
 // Author: Otto Urpelainen
 // Email: oturpe@iki.fi
 // Date: 2016-06-18
 
-#include "Atmega88pUtils.h"
+#include "Atmega8Utils.h"
 
 #include "config.h"
 
 #include <avr/io.h>
 #include <util/delay.h>
-
-uint32_t indicatorCounter = 0;
 
 /// \brief
 ///    Toggles the indicator led state.
@@ -29,30 +30,44 @@ void toggleIndicator() {
 }
 
 /// \brief
-///    Reads all six switches and returns a boolean array telling if they are
-///    pressed or not.
-///
-/// \param switchState
-///    Output parameter. Array of six booleans whose value is set to true if
-///    the corresponding switch is being pressed.
-void readSwitches(bool * switchState) {
-    switchState[0] = SWITCH_1_INPUT & BV(SWITCH_1_INPUT_PIN);
-    switchState[1] = SWITCH_2_INPUT & BV(SWITCH_2_INPUT_PIN);
-    switchState[2] = SWITCH_3_INPUT & BV(SWITCH_3_INPUT_PIN);
-    switchState[3] = SWITCH_4_INPUT & BV(SWITCH_4_INPUT_PIN);
-    switchState[4] = SWITCH_5_INPUT & BV(SWITCH_5_INPUT_PIN);
-    switchState[5] = SWITCH_6_INPUT & BV(SWITCH_6_INPUT_PIN);
+///    Sets the motors to the state they should have on startup.
+void initializeMotors() {
+    // Set running forwards
+    MOTOR_1_FORWARD_OUTPUT_COMPARE = MOTOR_1_SPEED;
+    MOTOR_1_REVERSE_OUTPUT_COMPARE = 0x00;
+
+    MOTOR_2_FORWARD_OUTPUT_COMPARE = MOTOR_2_SPEED;
+    MOTOR_2_REVERSE_OUTPUT_COMPARE = 0x00;
+
+    MOTOR_3_FORWARD_OUTPUT_COMPARE = MOTOR_3_SPEED;
+    MOTOR_3_REVERSE_OUTPUT_COMPARE = 0x00;
+
+    // Enable all outputs
+    MOTOR_1_FORWARD_DATA |= BV(MOTOR_1_FORWARD_DATA_PIN);
+    MOTOR_2_FORWARD_DATA |= BV(MOTOR_2_FORWARD_DATA_PIN);
+    MOTOR_3_FORWARD_DATA |= BV(MOTOR_3_FORWARD_DATA_PIN);
+    MOTOR_1_REVERSE_DATA |= BV(MOTOR_1_REVERSE_DATA_PIN);
+    MOTOR_2_REVERSE_DATA |= BV(MOTOR_2_REVERSE_DATA_PIN);
+    MOTOR_3_REVERSE_DATA |= BV(MOTOR_3_REVERSE_DATA_PIN);
+}
+
+/// \brief
+///    Calculates the correct acceleration to use when current and target speed
+///    are as given.
+int16_t acceleration(uint8_t current, uint8_t target, uint8_t maxAcceleration) {
+    int16_t acceleration;
+
+    acceleration = target - current;
+
+    if (acceleration > maxAcceleration) {
+        acceleration = maxAcceleration;
+    }
+
+    return acceleration;
 }
 
 int main() {
     INDICATOR_DATA_DIR |= BV(INDICATOR_DATA_DIR_PIN);
-
-    SWITCH_1_DATA |= BV(SWITCH_1_DATA_PIN);
-    SWITCH_2_DATA |= BV(SWITCH_2_DATA_PIN);
-    SWITCH_3_DATA |= BV(SWITCH_3_DATA_PIN);
-    SWITCH_4_DATA |= BV(SWITCH_4_DATA_PIN);
-    SWITCH_5_DATA |= BV(SWITCH_5_DATA_PIN);
-    SWITCH_6_DATA |= BV(SWITCH_6_DATA_PIN);
 
     MOTOR_1_FORWARD_DATA_DIR |= BV(MOTOR_1_FORWARD_DATA_DIR_PIN);
     MOTOR_1_REVERSE_DATA_DIR |= BV(MOTOR_1_REVERSE_DATA_DIR_PIN);
@@ -61,20 +76,43 @@ int main() {
     MOTOR_3_FORWARD_DATA_DIR |= BV(MOTOR_3_FORWARD_DATA_DIR_PIN);
     MOTOR_3_REVERSE_DATA_DIR |= BV(MOTOR_3_REVERSE_DATA_DIR_PIN);
 
+    Atmega8::initializeTimer0(
+        PRESCALER_VALUE,
+        Atmega8::PWM_PHASE_CORRECT,
+        Atmega8::TOP_00FF
+    );
+    Atmega8::initializeTimer1(
+        PRESCALER_VALUE,
+        Atmega8::PWM_PHASE_CORRECT,
+        Atmega8::TOP_00FF
+    );
+    Atmega8::initializeTimer2(
+        PRESCALER_VALUE,
+        Atmega8::PWM_PHASE_CORRECT,
+        Atmega8::TOP_00FF
+    );
+
+    OCR1AH = 0x00;
+    OCR1BH = 0x00;
+
+    // Set non-inverting pwm
+    TCCR0A |= BV(COM0A1) | BV(COM0B1);
+    TCCR1A |= BV(COM1A1) | BV(COM1B1);
+    TCCR2A |= BV(COM2A1) | BV(COM2B1);
+
+    initializeMotors();
+
+    uint16_t indicatorCounter = 0;
+
     while (true) {
-        if (indicatorCounter % INDICATOR_HALF_PERIOD == 0) {
+        if (indicatorCounter == INDICATOR_HALF_PERIOD) {
             toggleIndicator();
+            indicatorCounter = 0;
         }
-        indicatorCounter++;
-
-        bool switchState[6];
-        readSwitches(switchState);
-
-        if(switchState[0]) {
-            MOTOR_1_FORWARD_DATA |= BV(MOTOR_1_FORWARD_DATA_PIN);
+        else {
+            indicatorCounter++;
         }
 
         _delay_ms(LOOP_DELAY);
     }
-
 }
